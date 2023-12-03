@@ -46,7 +46,7 @@ struct pixel_t
 #define QOI_MINIMUM_BUFFER_SIZE 1024
 #define QOI_BUFFER_MINIMUM_FREE 5
 
-size_t qoi_encode(const uint8_t *const data, const size_t size, const enum qoi_format_t format, uint8_t **output)
+size_t qoi_encode(const uint8_t *const data, const size_t size, const enum qoi_channels_t channels, uint8_t **output)
 {
     uint8_t *buffer;
     size_t buffer_size = (size >> 1) > QOI_MINIMUM_BUFFER_SIZE ? size >> 1 : QOI_MINIMUM_BUFFER_SIZE;
@@ -72,8 +72,8 @@ size_t qoi_encode(const uint8_t *const data, const size_t size, const enum qoi_f
         pixel.red = data[read_index];
         pixel.green = data[read_index + 1];
         pixel.blue = data[read_index + 2];
-        pixel.alpha = (format == RGB) ? 255 : data[read_index + 3];
-        read_index += format;
+        pixel.alpha = (channels == RGB) ? 255 : data[read_index + 3];
+        read_index += channels;
 
         if (pixel.red == previous_pixel.red && pixel.green == previous_pixel.green && pixel.blue == previous_pixel.blue && pixel.alpha == previous_pixel.alpha)
         {
@@ -162,9 +162,8 @@ size_t qoi_encode(const uint8_t *const data, const size_t size, const enum qoi_f
     return buffer_index;
 }
 
-size_t qoi_decode(const uint8_t *const data, const size_t size, const enum qoi_format_t format, uint8_t **output)
+size_t qoi_decode(const uint8_t *const data, const size_t size, const enum qoi_channels_t channels, uint8_t **output)
 {
-    (void)format;
     struct pixel_t previous_pixel = {.red = 0, .green = 0, .blue = 0, .alpha = 255};
     struct pixel_t pixel = previous_pixel;
     struct pixel_t *array = calloc(sizeof(struct pixel_t), QOI_BUFFER_SIZE);
@@ -210,8 +209,11 @@ size_t qoi_decode(const uint8_t *const data, const size_t size, const enum qoi_f
                     (*output)[output_index] = pixel.red;
                     (*output)[output_index + 1] = pixel.green;
                     (*output)[output_index + 2] = pixel.blue;
-                    (*output)[output_index + 3] = pixel.alpha;
-                    output_index += 4;
+                    if (channels == RGBA)
+                    {
+                        (*output)[output_index + 3] = pixel.alpha;
+                    }
+                    output_index += channels;
                 }
                 break;
             }
@@ -232,8 +234,10 @@ size_t qoi_decode(const uint8_t *const data, const size_t size, const enum qoi_f
         (*output)[output_index] = pixel.red;
         (*output)[output_index + 1] = pixel.green;
         (*output)[output_index + 2] = pixel.blue;
-        (*output)[output_index + 3] = pixel.alpha;
-        output_index += 4;
+        if (channels == RGBA) {
+            (*output)[output_index + 3] = pixel.alpha;
+        }
+        output_index += channels;
 
         uint8_t hash = (pixel.red * 3 + pixel.green * 5 + pixel.blue * 7 + pixel.alpha * 11) % 64;
         array[hash] = pixel;
@@ -265,9 +269,9 @@ struct image_t load_qoi(const char *const filename)
     }
     output.width = reverse_u32_t(header.width);
     output.height = reverse_u32_t(header.height);
-    output.format = header.channels;
+    output.channels = header.channels;
     output.colorspace = header.colorspace;
-    output.size = output.width * output.height * 4;
+    output.size = output.width * output.height * header.channels;
     output.data = malloc(output.size);
 
     fseek(qoi_ptr, 0L, SEEK_END);
@@ -284,7 +288,7 @@ struct image_t load_qoi(const char *const filename)
     fread(buffer, sizeof(uint8_t), filesize - QOI_HEADER_SIZE, qoi_ptr);
     fclose(qoi_ptr);
 
-    qoi_decode(buffer, filesize - QOI_HEADER_SIZE, output.format, &output.data);
+    qoi_decode(buffer, filesize - QOI_HEADER_SIZE, output.channels, &output.data);
 
     free(buffer);
 
@@ -296,30 +300,23 @@ void save_qoi(const struct image_t image_data, const char *const filename)
     (void)filename;
 
     uint8_t *data;
-    size_t filesize = qoi_encode(image_data.data, image_data.size, image_data.format, &data);
+    size_t filesize = qoi_encode(image_data.data, image_data.size, image_data.channels, &data);
 
     FILE *fp = fopen("qoi_test.qoi", "wb");
 
-    uint32_t header = QOI_HEADER;
-    fwrite(&header, sizeof(header), 1, fp);
-    header = reverse_u32_t(image_data.width);
-    fwrite(&header, sizeof(uint32_t), 1, fp);
-    header  = reverse_u32_t(image_data.height);
-    fwrite(&header, sizeof(uint32_t), 1, fp);
-    fwrite(&(image_data.format), sizeof(uint8_t), 1, fp);
+    uint32_t temp = QOI_HEADER;
+    fwrite(&temp, sizeof(uint32_t), 1, fp);
+    temp = reverse_u32_t(image_data.width);
+    fwrite(&temp, sizeof(uint32_t), 1, fp);
+    temp  = reverse_u32_t(image_data.height);
+    fwrite(&temp, sizeof(uint32_t), 1, fp);
+    fwrite(&(image_data.channels), sizeof(uint8_t), 1, fp);
     fwrite(&(image_data.colorspace), sizeof(uint8_t), 1, fp);
 
-    for(size_t i = 0; i < filesize; i++)
-    {
-        (void)fwrite(data + i, 1, 1, fp);
-    }
+    fwrite(data, sizeof(uint8_t), filesize, fp);
 
-    uint8_t temp;
-    for (size_t i = 0; i < sizeof(QOI_STREAM_END); i++)
-    {
-        temp = QOI_STREAM_END >> (i * 8);
-        (void)fwrite(&temp, 1, 1, fp);
-    }
+    uint64_t stream_end = QOI_STREAM_END;
+    fwrite(&stream_end, sizeof(stream_end), 1, fp);
 
     (void)fclose(fp);
 

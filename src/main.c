@@ -7,29 +7,33 @@ int main (int argc, char** argv)
 
     struct image_t tmp;
     tmp = load_qoi(argv[1]);
-        
-    printf("Loaded QOI\n==========\n\n");
-    printf("\t%u x %u px\n\t%u channels\n\t%u colorspace\n", tmp.width, tmp.height, tmp.format, tmp.colorspace);
+    printf("Loaded QOI:\t%u x %u px, %u channels, colorspace %u\n", tmp.width, tmp.height, tmp.channels, tmp.colorspace);
 
-    // Test output for debugging
+    // Test: Save intermediate images as .ppm
     FILE *fp = fopen("qoi_test.ppm", "wb");
-    FILE *fp_a = fopen("qoi_alpha.ppm", "wb");
     fprintf(fp, "P6\n%d %d\n255\n", tmp.width, tmp.height);
-    fprintf(fp_a, "P6\n%d %d\n255\n", tmp.width, tmp.height);
-    for (uint32_t i = 0; i < tmp.size; i += 4)
-    {
-        fwrite(tmp.data + i, 1, 1, fp);
-        fwrite(tmp.data + i + 1, 1, 1, fp);
-        fwrite(tmp.data + i + 2, 1, 1, fp);
-        for (int j = 0; j < 3; j++)
+    if(tmp.channels == RGBA) {
+        FILE *fp_a = fopen("qoi_alpha.ppm", "wb");
+        fprintf(fp_a, "P6\n%d %d\n255\n", tmp.width, tmp.height);
+        for (uint32_t i = 0; i < tmp.size; i += tmp.channels)
         {
-            fwrite(tmp.data + i + 3, 1, 1, fp_a);
+            fwrite(tmp.data + i, sizeof(uint8_t), 3, fp);
+            if(tmp.channels == RGBA)
+            {
+                for (int j = 0; j < 3; j++)
+                {
+                    fwrite(tmp.data + i + 3, sizeof(uint8_t), 1, fp_a);
+                }
+            }
         }
+        fclose(fp_a);
+    }
+    else
+    {
+        fwrite(tmp.data, 1, tmp.size, fp);
     }
     fclose(fp);
-    fclose(fp_a);
 
-    tmp.format = RGBA;
     save_qoi(tmp, "qoi_test.qoi");
 
     free(tmp.data);
