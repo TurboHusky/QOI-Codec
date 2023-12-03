@@ -4,30 +4,35 @@
 int main (int argc, char** argv)
 {
     (void) argc;
-    (void) argv;
 
-    uint8_t test_data[] = { 0,0,0,255, 0,0,0,255, 0,0,0,255, 0,255,0,255,
-                            255,0,0,255, 255,0,0,255, 255,0,0,255, 255,0,0,255,
-                            0,0,255,255, 0,0,255,127, 0,0,255,128, 0,0,255,255,
-                            255,0,0,255, 255,255,0,255, 5,255,248,255, 255,255,255,255 };
+    struct image_t tmp;
+    tmp = load_qoi(argv[1]);
+        
+    printf("Loaded QOI\n==========\n\n");
+    printf("\t%u x %u px\n\t%u channels\n\t%u colorspace\n", tmp.width, tmp.height, tmp.format, tmp.colorspace);
 
-    uint8_t *output = NULL;
-    uint8_t *reconstruct = malloc(64);
-    size_t size = qoi_encode(test_data, 64, RGBA, &output);
-    printf("QOI compressed size: %ld\n", size);
-    qoi_decode(output, 26, RGBA, &reconstruct);
-
-    for(size_t i = 0; i < 64; i++)
+    // Test output for debugging
+    FILE *fp = fopen("qoi_test.ppm", "wb");
+    FILE *fp_a = fopen("qoi_alpha.ppm", "wb");
+    fprintf(fp, "P6\n%d %d\n255\n", tmp.width, tmp.height);
+    fprintf(fp_a, "P6\n%d %d\n255\n", tmp.width, tmp.height);
+    for (uint32_t i = 0; i < tmp.size; i += 4)
     {
-        printf("%u ", reconstruct[i]);
-        if ((i+1)%16 == 0)
+        fwrite(tmp.data + i, 1, 1, fp);
+        fwrite(tmp.data + i + 1, 1, 1, fp);
+        fwrite(tmp.data + i + 2, 1, 1, fp);
+        for (int j = 0; j < 3; j++)
         {
-            printf("\n");
+            fwrite(tmp.data + i + 3, 1, 1, fp_a);
         }
     }
-    printf("\n");
+    fclose(fp);
+    fclose(fp_a);
 
-    free(output);
-    free(reconstruct);
+    tmp.format = RGBA;
+    save_qoi(tmp, "qoi_test.qoi");
+
+    free(tmp.data);
+
     return 0;
 }
